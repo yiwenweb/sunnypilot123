@@ -35,34 +35,40 @@ HTML_PAGE = """<!DOCTYPE html>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: #000; overflow: hidden; }
-  .vc { width: 100vw; height: 100vh; position: relative; }
-  .vc img { width: 100%; height: 100%; display: block; position: absolute; top: 0; left: 0; object-fit: contain; }
+  img { width: 100vw; height: 100vh; display: block; object-fit: contain; }
 </style>
 </head>
 <body>
-  <div class="vc" id="c"><div style="width:100%;height:100vh"></div></div>
+  <img id="v" src="" />
   <script>
     var cam = (new URLSearchParams(location.search)).get('cam') || 'road';
-    var c = document.getElementById('c');
-    var a = new Image(), b = new Image(), u = true, fc = 0;
-    a.style.cssText = b.style.cssText = 'width:100%;height:100%;display:block;position:absolute;top:0;left:0;object-fit:contain;';
-    c.appendChild(a); c.appendChild(b);
-    function next() {
-      var s = u ? b : a, o = u ? a : b;
-      s.onload = function() { s.style.zIndex=2; o.style.zIndex=1; u=!u; fc++; setTimeout(next,50); };
-      s.onerror = function() { setTimeout(next,2000); };
-      s.src = '/snapshot?cam=' + cam + '&t=' + Date.now();
+    var img = document.getElementById('v');
+    var fc = 0;
+
+    function startStream() {
+      img.src = '/stream?cam=' + cam + '&t=' + Date.now();
     }
-    next();
+    img.onerror = function() { setTimeout(startStream, 2000); };
+    // 用 MutationObserver 或 onload 计帧不可靠，改用 /status 轮询 fps
+    startStream();
+
     // 通过 postMessage 接收摄像头切换指令
     window.addEventListener('message', function(e) {
-      if (e.data && e.data.cam) { cam = e.data.cam; fc = 0; }
+      if (e.data && e.data.cam) {
+        cam = e.data.cam;
+        fc = 0;
+        startStream();
+      }
     });
-    // 暴露 fps 给父页面
+
+    // fps 估算：通过 /status 接口获取实际帧率
     setInterval(function() {
-      try { parent.postMessage({fps: fc}, '*'); } catch(e) {}
-      fc = 0;
-    }, 1000);
+      fetch('/status').then(function(r) { return r.text(); }).then(function(t) {
+        var m = t.match(/FPS:\\s*([\\d.]+)/);
+        var fps = m ? Math.round(parseFloat(m[1])) : 0;
+        try { parent.postMessage({fps: fps}, '*'); } catch(e) {}
+      }).catch(function(){});
+    }, 2000);
   </script>
 </body>
 </html>"""

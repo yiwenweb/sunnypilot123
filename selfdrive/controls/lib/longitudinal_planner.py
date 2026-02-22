@@ -284,8 +284,26 @@ class LongitudinalPlanner:
     # 因为 navi_bridge 10Hz 而 planner 20Hz，updated 只有一半帧为 True
     # sm['liveMapDataSP'] 始终保持最后一次收到的数据，所以直接读取即可
     navi_turn_target = 255
+    navi_speed_limit_target = 255
     if sm.alive.get('liveMapDataSP'):
       map_data = sm['liveMapDataSP']
+
+      # 导航道路限速（直接生效，不依赖 SLC 框架的 EnableSlc 开关）
+      if map_data.speedLimitValid and map_data.speedLimit > 0:
+        navi_speed_limit_target = map_data.speedLimit  # 已经是 m/s
+
+      # 前方测速摄像头/区间测速提前减速
+      if map_data.speedLimitAheadValid and map_data.speedLimitAhead > 0:
+        ahead_v = map_data.speedLimitAhead           # m/s
+        ahead_dist = map_data.speedLimitAheadDistance  # m
+        if ahead_v < v_ego and ahead_dist > 0:
+          # 以 1.0 m/s² 减速需要的距离
+          needed_dist = (v_ego ** 2 - ahead_v ** 2) / 2.0
+          needed_dist += v_ego * 3.0  # 3秒安全余量
+          if ahead_dist <= needed_dist:
+            navi_speed_limit_target = min(navi_speed_limit_target, ahead_v)
+
+      # 弯道减速
       if map_data.turnSpeedLimitValid and map_data.turnSpeedLimit > 0:
         turn_v = map_data.turnSpeedLimit          # 弯道建议速度 m/s
         turn_dist = map_data.turnSpeedLimitEndDistance  # 到弯道距离 m
@@ -298,7 +316,7 @@ class LongitudinalPlanner:
             navi_turn_target = turn_v
 
     # Pick solution with the lowest velocity target.
-    v_solutions = min(v_cruise, v_tsc_target, slc_target, m_tsc_target, navi_turn_target)
+    v_solutions = min(v_cruise, v_tsc_target, slc_target, m_tsc_target, navi_turn_target, navi_speed_limit_target)
 
     return v_solutions
 

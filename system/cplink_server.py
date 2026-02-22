@@ -92,6 +92,7 @@ async def ws_carstate(request: web.Request) -> web.WebSocketResponse:
       if sm.alive.get('carState'):
         CS = sm['carState']
         v_ego = CS.vEgoCluster
+        # vCruiseCluster 在 openpilot 中单位是 km/h（已经是仪表盘单位）
         v_cruise = CS.vCruiseCluster
         gs = CS.gearShifter
         step = CS.gearStep
@@ -103,6 +104,21 @@ async def ws_carstate(request: web.Request) -> web.WebSocketResponse:
         gear = gear_map.get(gs, "D")
         if gs == GearShifter.drive and step > 0:
           gear = str(step)
+      else:
+        # carState 不可用时尝试等待
+        await asyncio.sleep(0.5)
+        sm.update(0)
+        if sm.alive.get('carState'):
+          CS = sm['carState']
+          v_ego = CS.vEgoCluster
+          v_cruise = CS.vCruiseCluster
+          gs = CS.gearShifter
+          gear_map = {
+            GearShifter.park: "P", GearShifter.drive: "D",
+            GearShifter.neutral: "N", GearShifter.reverse: "R",
+            GearShifter.sport: "S", GearShifter.low: "L",
+          }
+          gear = gear_map.get(gs, "D")
 
       if sm.alive.get('deviceState'):
         ds = sm['deviceState']
@@ -152,8 +168,8 @@ async def ws_carstate(request: web.Request) -> web.WebSocketResponse:
 
       payload = {
         "ts": now,
-        "vEgo": v_ego,
-        "vSetKph": v_cruise,
+        "vEgo": v_ego if v_ego is not None else 0.0,
+        "vSetKph": v_cruise if v_cruise is not None else 0.0,
         "gear": gear,
         "gpsOk": True,
         "cpuTempC": cpu_temp_c,
