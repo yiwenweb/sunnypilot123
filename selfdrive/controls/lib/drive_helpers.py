@@ -22,7 +22,7 @@ CONTROL_N = 17
 CAR_ROTATION_RADIUS = 0.0
 
 # EU guidelines
-MAX_LATERAL_JERK = 5.0
+MAX_LATERAL_JERK = 3.5  # 降低横向加加速度限制，使变道更平顺（原值 5.0）
 MAX_VEL_ERR = 5.0
 
 ButtonEvent = car.CarState.ButtonEvent

@@ -142,8 +142,9 @@ class DesireHelper:
 
       # LaneChangeState.laneChangeStarting
       elif self.lane_change_state == LaneChangeState.laneChangeStarting:
-        # fade out over 1.0s (was 0.5s, slower = smoother lane change initiation)
-        self.lane_change_ll_prob = max(self.lane_change_ll_prob - 1 * DT_MDL, 0.0)
+        # fade out over 1.5s (was 1.0s→0.5s original, slower = smoother lane change initiation)
+        # 1.5s gives the driver a gentler transition, reducing the "jerk" feeling
+        self.lane_change_ll_prob = max(self.lane_change_ll_prob - 0.667 * DT_MDL, 0.0)
 
         # 98% certainty
         if lane_change_prob < 0.02 and self.lane_change_ll_prob < 0.01:

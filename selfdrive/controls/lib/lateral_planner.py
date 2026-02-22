@@ -27,6 +27,10 @@ LATERAL_JERK_COST = 0.04
 # speed lateral control is stable on all cars
 STEERING_RATE_COST = 700.0
 
+# 变道时使用更保守的 MPC 参数，减少方向盘急转
+LANE_CHANGE_STEERING_RATE_COST = 1500.0  # 变道时转向速率惩罚加倍
+LANE_CHANGE_LATERAL_JERK_COST = 0.08     # 变道时 jerk 惩罚加倍
+
 
 class LateralPlanner:
   def __init__(self, CP, debug=False, model_use_lateral_planner=False):
@@ -140,9 +144,14 @@ class LateralPlanner:
         self.dynamic_lane_profile_status = True
 
       if not self.dynamic_lane_profile_status:
+        # 变道时使用更保守的 MPC 参数
+        is_lane_changing = self.DH.lane_change_state in (LaneChangeState.laneChangeStarting, LaneChangeState.laneChangeFinishing)
+        sr_cost = LANE_CHANGE_STEERING_RATE_COST if is_lane_changing else STEERING_RATE_COST
+        jerk_cost = LANE_CHANGE_LATERAL_JERK_COST if is_lane_changing else LATERAL_JERK_COST
+
         self.lat_mpc.set_weights(PATH_COST, LATERAL_MOTION_COST,
-                                 LATERAL_ACCEL_COST, LATERAL_JERK_COST,
-                                 STEERING_RATE_COST)
+                                 LATERAL_ACCEL_COST, jerk_cost,
+                                 sr_cost)
 
         y_pts = self.path_xyz[:LAT_MPC_N+1, 1]
         heading_pts = self.plan_yaw[:LAT_MPC_N+1]
