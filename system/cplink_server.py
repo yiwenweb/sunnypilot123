@@ -70,7 +70,8 @@ async def ws_carstate(request: web.Request) -> web.WebSocketResponse:
   ws = web.WebSocketResponse(heartbeat=20)
   await ws.prepare(request)
 
-  sm = messaging.SubMaster(['carState', 'deviceState', 'peripheralState'])
+  # 订阅 carState + controlsState（巡航速度在 controlsState 中，单位 km/h）
+  sm = messaging.SubMaster(['carState', 'controlsState', 'deviceState', 'peripheralState'])
   params = Params() if HAS_PARAMS else None
   mem_params = None
   if HAS_PARAMS:
@@ -84,16 +85,15 @@ async def ws_carstate(request: web.Request) -> web.WebSocketResponse:
       sm.update(0)
       now = time.time()
 
-      v_ego = None
-      v_cruise = None
+      v_ego = 0.0
+      v_cruise_kph = 0.0
       gear = "P"
       cpu_temp_c = None
 
       if sm.alive.get('carState'):
         CS = sm['carState']
-        v_ego = CS.vEgoCluster
-        # vCruiseCluster 在 openpilot 中单位是 km/h（已经是仪表盘单位）
-        v_cruise = CS.vCruiseCluster
+        # BYD 没有设置 vEgoCluster，回退到 vEgo（单位 m/s）
+        v_ego = CS.vEgoCluster if CS.vEgoCluster > 0.1 else CS.vEgo
         gs = CS.gearShifter
         step = CS.gearStep
         gear_map = {
@@ -105,13 +105,12 @@ async def ws_carstate(request: web.Request) -> web.WebSocketResponse:
         if gs == GearShifter.drive and step > 0:
           gear = str(step)
       else:
-        # carState 不可用时尝试等待
+        # carState 不可用时等待
         await asyncio.sleep(0.5)
         sm.update(0)
         if sm.alive.get('carState'):
           CS = sm['carState']
-          v_ego = CS.vEgoCluster
-          v_cruise = CS.vCruiseCluster
+          v_ego = CS.vEgoCluster if CS.vEgoCluster > 0.1 else CS.vEgo
           gs = CS.gearShifter
           gear_map = {
             GearShifter.park: "P", GearShifter.drive: "D",
@@ -119,6 +118,11 @@ async def ws_carstate(request: web.Request) -> web.WebSocketResponse:
             GearShifter.sport: "S", GearShifter.low: "L",
           }
           gear = gear_map.get(gs, "D")
+
+      # 巡航速度从 controlsState 读取（单位已经是 km/h）
+      # BYD 的 carState.vCruiseCluster 未设置（始终为 0）
+      if sm.alive.get('controlsState'):
+        v_cruise_kph = sm['controlsState'].vCruise  # km/h
 
       if sm.alive.get('deviceState'):
         ds = sm['deviceState']
@@ -168,8 +172,8 @@ async def ws_carstate(request: web.Request) -> web.WebSocketResponse:
 
       payload = {
         "ts": now,
-        "vEgo": v_ego if v_ego is not None else 0.0,
-        "vSetKph": v_cruise if v_cruise is not None else 0.0,
+        "vEgo": v_ego,           # m/s，App 端 *3.6 转 km/h
+        "vSetKph": v_cruise_kph, # km/h，来自 controlsState.vCruise
         "gear": gear,
         "gpsOk": True,
         "cpuTempC": cpu_temp_c,
