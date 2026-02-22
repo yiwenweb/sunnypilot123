@@ -248,13 +248,25 @@ async def on_shutdown(app: 'web.Application'):
   del app['streams']
 
 
+@web.middleware
+async def cors_middleware(request, handler):
+  if request.method == 'OPTIONS':
+    resp = web.Response(status=200)
+  else:
+    resp = await handler(request)
+  resp.headers['Access-Control-Allow-Origin'] = '*'
+  resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+  resp.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+  return resp
+
+
 def webrtcd_thread(host: str, port: int, debug: bool):
   logging.basicConfig(level=logging.CRITICAL, handlers=[logging.StreamHandler()])
   logging_level = logging.DEBUG if debug else logging.INFO
   logging.getLogger("WebRTCStream").setLevel(logging_level)
   logging.getLogger("webrtcd").setLevel(logging_level)
 
-  app = web.Application()
+  app = web.Application(middlewares=[cors_middleware])
 
   app['streams'] = dict()
   app['debug'] = debug

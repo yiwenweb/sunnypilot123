@@ -72,7 +72,7 @@ def get_jerk_factor(personality=custom.LongitudinalPersonalitySP.standard):
 
 def get_T_FOLLOW(personality=custom.LongitudinalPersonalitySP.standard):
   if personality==custom.LongitudinalPersonalitySP.relaxed:
-    return 1.75
+    return 2.8
   elif personality==custom.LongitudinalPersonalitySP.standard:
     return 1.45
   elif personality==custom.LongitudinalPersonalitySP.moderate:
@@ -86,7 +86,7 @@ def get_T_FOLLOW(personality=custom.LongitudinalPersonalitySP.standard):
 def get_dynamic_personality(v_ego, personality=custom.LongitudinalPersonalitySP.standard):
   if personality==custom.LongitudinalPersonalitySP.relaxed:
     x_vel =  [0,    11,   14.5, 15,   20,   20.01,  25,    25.01,  36,  36.01]
-    y_dist = [1.5,  1.5,  1.55,  1.7,  1.76, 1.80,   1.80,  2.00,   2.2, 2.2]
+    y_dist = [2.0,  2.0,  2.1,  2.2,  2.4,  2.5,    2.6,   2.7,    2.8, 2.8]
   elif personality==custom.LongitudinalPersonalitySP.standard:
     x_vel =  [0,    11,   14.5, 15,   20,   20.01,  25,    25.01,  36,  36.01]
     y_dist = [1.40, 1.40, 1.40, 1.50, 1.60, 1.76,   1.76,  1.78,   1.8, 1.8]

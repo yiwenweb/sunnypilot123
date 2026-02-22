@@ -124,10 +124,16 @@ class LateralPlanner:
         self.LP.rll_prob *= self.DH.lane_change_ll_prob
       self.d_path_w_lines_xyz = self.LP.get_d_path(self.v_ego, self.t_idxs, self.path_xyz)
 
-      low_speed = v_ego_car < 10 * CV.MPH_TO_MS
+      # Low speed: blend between laneline path and model path instead of hard cutoff
+      # Below ~3 m/s (10.8 km/h): 30% laneline, above ~4.47 m/s (16 km/h): 100% laneline
+      low_speed_lane_blend = interp(v_ego_car, [3.0, 10 * CV.MPH_TO_MS], [0.3, 1.0])
 
-      if not self.get_dynamic_lane_profile(sm['longitudinalPlanSP']) and not low_speed:
-        self.path_xyz = self.d_path_w_lines_xyz
+      if not self.get_dynamic_lane_profile(sm['longitudinalPlanSP']):
+        # Use blended path: mix laneline-corrected path with model path based on speed
+        model_path_y = self.path_xyz[:, 1] + self.LP.path_offset
+        laneline_path_y = self.d_path_w_lines_xyz[:, 1]
+        self.path_xyz[:, 1] = low_speed_lane_blend * laneline_path_y + (1.0 - low_speed_lane_blend) * model_path_y
+        self.d_path_w_lines_xyz[:, 1] = self.path_xyz[:, 1]
         self.dynamic_lane_profile_status = False
       else:
         self.path_xyz[:, 1] += self.LP.path_offset

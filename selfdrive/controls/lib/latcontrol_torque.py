@@ -19,7 +19,7 @@ BYD_FORCE_TORQUE_FIX = Params().get_bool(BYDForceTorqueFix)
 PROTOCOL_KEY='carOutput'
 sm = messaging.SubMaster([PROTOCOL_KEY])
 errorFilter = FirstOrderFilter(0, 0.5, 0.01, False)
-dsadFilter = FirstOrderFilter(0, 0.5, 0.01, False)
+dsadFilter = FirstOrderFilter(0, 2.5, 0.01, False)
 
 # At higher speeds (25+mph) we can assume:
 # Lateral acceleration achieved by a specific car correlates to
@@ -197,7 +197,9 @@ class LatControlTorque(LatControl):
   def update(self, active, CS, VM, params, steer_limited, desired_curvature, llk, model_data=None):
     self.update_live_tune()
     
-    freeze_integrator = steer_limited or CS.steeringPressed or CS.vEgo < 1.5
+    # Lower freeze threshold to allow integrator to build up steering torque in slow traffic
+    # Original 1.5 m/s (5.4 km/h) was too high, causing insufficient steering in congestion
+    freeze_integrator = steer_limited or CS.steeringPressed or CS.vEgo < 0.5
     
     pid_log = log.ControlsState.LateralTorqueState.new_message()
 
@@ -224,7 +226,12 @@ class LatControlTorque(LatControl):
         actual_curvature_llk = llk.angularVelocityCalibrated.value[2] / CS.vEgo
         actual_curvature = interp(CS.vEgo, [2.0, 5.0], [actual_curvature_vm, actual_curvature_llk])
         curvature_deadzone = 0.0
-      desired_lateral_accel = desired_curvature * CS.vEgo ** 2 * 0.9
+      # Speed-adaptive curvature attenuation to reduce inside-curve cutting at low speeds
+      # Very low speed (<8 m/s ~29 km/h): no attenuation, need full steering for lane keeping in traffic
+      # Medium speed (8~20 m/s): gradually reduce to prevent curve cutting
+      # High speed (>20 m/s ~72 km/h): no attenuation, need full cornering ability
+      curvature_scale = interp(CS.vEgo, [8.0, 13.0, 20.0], [0.88, 0.93, 1.0])
+      desired_lateral_accel = desired_curvature * CS.vEgo ** 2 * curvature_scale
 
       # desired rate is the desired rate of change in the setpoint, not the absolute desired curvature
       # desired_lateral_jerk = desired_curvature_rate * CS.vEgo ** 2
@@ -332,11 +339,15 @@ class LatControlTorque(LatControl):
         sm.update(0)
         # both current torque and requested torque diff were considered factor of delay
         current_torque_diff = abs(sm[PROTOCOL_KEY].actuatorsOutput.steer + output_torque)
-        # time for canceling the error ( -1.0 to 1.0 )
-        # assuming the delay is doubled cause the posive and negtive zone
-        # current torque is lower than limit considered large delay, because of the friction or deadzone issues
-        dsad = interp(current_torque_diff, [0.0, 1.0], [0.02, 0.02 * 20]) \
-          if sm[PROTOCOL_KEY].actuatorsOutput.steer > 0.2 else 0.50
+        eps_steer = abs(sm[PROTOCOL_KEY].actuatorsOutput.steer)
+        # Smooth DSAD: blend between low-torque (high delay) and high-torque (low delay)
+        # instead of hard 0.2 threshold that causes step-change oscillation
+        torque_based_dsad = interp(current_torque_diff, [0.0, 1.0], [0.02, 0.02 * 20])
+        low_torque_dsad = 0.50
+        # Smooth transition: at eps_steer < 0.1 use full low_torque_dsad,
+        # at eps_steer > 0.35 use full torque_based_dsad
+        dsad_blend = interp(eps_steer, [0.1, 0.35], [0.0, 1.0])
+        dsad = dsad_blend * torque_based_dsad + (1.0 - dsad_blend) * low_torque_dsad
         self.dsad = dsadFilter.update(dsad)
         if self._frame % 50 == 0:
           print("DSAD: ", self.dsad, "ETE: ", self.eps_torque_error)
@@ -357,7 +368,7 @@ class LatControlTorque(LatControl):
       pid_log.output = -output_torque
       pid_log.actualLateralAccel = actual_lateral_accel
       pid_log.desiredLateralAccel = desired_lateral_accel
-      pid_log.saturated = self._check_saturation(self.steer_max - abs(output_torque) < 1e-3, CS, steer_limited)
+      pid_log.saturated = self._check_saturation(self.steer_max - abs(output_torque) < 1e-3, CS, steer_limited, getattr(self, '_curvature_limited', False))
       if nn_log is not None:
         pid_log_sp.nnLog = nn_log
         self._pid_long_sp = pid_log_sp

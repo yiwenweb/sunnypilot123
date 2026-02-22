@@ -247,14 +247,29 @@ def rate_limit(new_value, last_value, dw_step, up_step):
   return clip(new_value, last_value + dw_step, last_value + up_step)
 
 
-def clip_curvature(v_ego, prev_curvature, new_curvature):
+ACCELERATION_DUE_TO_GRAVITY = 9.8
+MAX_LATERAL_ACCEL_NO_ROLL = 3.0  # m/s²
+MAX_CURVATURE = 0.2
+
+def clip_curvature(v_ego, prev_curvature, new_curvature, roll=0.0):
   v_ego = max(MIN_SPEED, v_ego)
   max_curvature_rate = MAX_LATERAL_JERK / (v_ego**2) # inexact calculation, check https://github.com/commaai/openpilot/pull/24755
-  safe_desired_curvature = clip(new_curvature,
-                                prev_curvature - max_curvature_rate * DT_CTRL,
-                                prev_curvature + max_curvature_rate * DT_CTRL)
+  new_curvature = clip(new_curvature,
+                       prev_curvature - max_curvature_rate * DT_CTRL,
+                       prev_curvature + max_curvature_rate * DT_CTRL)
 
-  return safe_desired_curvature
+  # roll compensation: gravity's lateral component on tilted roads
+  roll_compensation = roll * ACCELERATION_DUE_TO_GRAVITY
+  max_lat_accel = MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
+  min_lat_accel = -MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
+  clamped = clip(new_curvature, min_lat_accel / v_ego**2, max_lat_accel / v_ego**2)
+  limited_accel = clamped != new_curvature
+  new_curvature = clamped
+
+  clamped = clip(new_curvature, -MAX_CURVATURE, MAX_CURVATURE)
+  limited_max_curv = clamped != new_curvature
+
+  return float(clamped), limited_accel or limited_max_curv
 
 
 def get_lag_adjusted_curvature(CP, v_ego, psis, curvatures):

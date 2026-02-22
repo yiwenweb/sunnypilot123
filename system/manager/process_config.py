@@ -73,7 +73,7 @@ procs = [
 
   PythonProcess("dmonitoringmodeld", "selfdrive.modeld.dmonitoringmodeld", driverview, enabled=(not PC or WEBCAM)),
   NativeProcess("encoderd", "system/loggerd", ["./encoderd"], only_onroad),
-  NativeProcess("stream_encoderd", "system/loggerd", ["./encoderd", "--stream"], notcar),
+  NativeProcess("stream_encoderd", "system/loggerd", ["./encoderd", "--stream"], always_run, enabled=not PC),
   NativeProcess("loggerd", "system/loggerd", ["./loggerd"], logging),
   NativeProcess("modeld", "selfdrive/modeld", ["./modeld"], only_onroad),
   NativeProcess("mapsd", "selfdrive/navd", ["./mapsd"], model_use_nav),
@@ -109,12 +109,23 @@ procs = [
   PythonProcess("mapd_manager", "system.mapd_manager", always_run, enabled=not PC),
   # }} PFEIFER - MAPD
 
+  # CP搭子 导航桥接（高德地图 → liveMapDataSP）
+  # 注意：navi_bridge 和 mapd_manager 都需要运行，但只有 navi_bridge 发布 liveMapDataSP
+  # mapd_manager 检测到 navi_bridge 存在时会跳过发布，只做 OSM 数据库管理
+  PythonProcess("navi_bridge", "system.navi_bridge", always_run, enabled=not PC),
+
+  # CP搭子 兼容服务器（端口 7000，代理视频流 + 车辆状态）
+  PythonProcess("cplink_server", "system.cplink_server", always_run, enabled=not PC),
+
+  # C3 MJPEG 视频流服务（端口 8099，供 SP搭子 app WebView 显示）
+  PythonProcess("stream_server", "system.webview.stream_server", always_run, enabled=not PC),
+
   PythonProcess("otisserv", "selfdrive.navd.otisserv", always_run),
   PythonProcess("fleet_manager", "system.fleetmanager.fleet_manager", always_run, enabled=not PC),
 
   # debug procs
   NativeProcess("bridge", "cereal/messaging", ["./bridge"], logging_with_bridge), #notcar),
-  PythonProcess("webrtcd", "system.webrtc.webrtcd", notcar),
+  PythonProcess("webrtcd", "system.webrtc.webrtcd", always_run, enabled=not PC),
   PythonProcess("webjoystick", "tools.bodyteleop.web", notcar),
 
   # Sunnylink <3

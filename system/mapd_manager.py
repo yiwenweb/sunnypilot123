@@ -145,14 +145,22 @@ def main_thread(sm=None, pm=None):
   except Exception:
     cloudlog.exception("mapd: failed to set core affinity")
   rk = Ratekeeper(1, print_delay_threshold=None)
-  live_map_sp = OsmMapData()
+
+  # 检查 navi_bridge 是否存在：如果存在，由 navi_bridge 负责发布 liveMapDataSP
+  # mapd_manager 只负责 OSM 数据库管理，避免 MultiplePublishersError
+  navi_bridge_exists = os.path.isfile(os.path.join(BASEDIR, 'system', 'navi_bridge.py'))
+  live_map_sp = None if navi_bridge_exists else OsmMapData()
+
+  if navi_bridge_exists:
+    cloudlog.info("mapd_manager: navi_bridge detected, skipping liveMapDataSP publish (OSM DB management only)")
 
   while True:
     show_alert = get_files_for_cleanup() and params.get_bool("OsmLocal")
     set_offroad_alert("Offroad_OSMUpdateRequired", show_alert, "This alert will be cleared when new maps are downloaded.")
 
     update_osm_db()
-    live_map_sp.tick()
+    if live_map_sp is not None:
+      live_map_sp.tick()
     rk.keep_time()
 
 

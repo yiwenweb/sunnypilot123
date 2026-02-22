@@ -278,10 +278,27 @@ class LongitudinalPlanner:
     slc_target = self.speed_limit_controller.speed_limit_offseted if self.speed_limit_controller.is_active else 255
     m_tsc_target = self.turn_speed_controller.v_target if self.turn_speed_controller.is_active else 255
 
+    # 高德导航弯道减速（来自 navi_bridge 的 turnSpeedLimit）
+    # 根据到弯道的距离判断是否需要开始减速，避免突然刹车
+    navi_turn_target = 255
+    if sm.alive.get('liveMapDataSP') and sm.updated.get('liveMapDataSP'):
+      map_data = sm['liveMapDataSP']
+      if map_data.turnSpeedLimitValid and map_data.turnSpeedLimit > 0:
+        turn_v = map_data.turnSpeedLimit          # 弯道建议速度 m/s
+        turn_dist = map_data.turnSpeedLimitEndDistance  # 到弯道距离 m
+        if turn_v < v_ego and turn_dist > 0:
+          # 以 1.2 m/s² 减速到 turn_v 需要的距离: d = (v² - v_target²) / (2a)
+          needed_dist = (v_ego ** 2 - turn_v ** 2) / 2.4
+          # 加 2 秒安全余量
+          needed_dist += v_ego * 2.0
+          if turn_dist <= needed_dist:
+            navi_turn_target = turn_v
+
     # Pick solution with the lowest velocity target.
-    v_solutions = min(v_cruise, v_tsc_target, slc_target, m_tsc_target)
+    v_solutions = min(v_cruise, v_tsc_target, slc_target, m_tsc_target, navi_turn_target)
 
     return v_solutions
+
 
   def e2e_events(self, sm):
     e2e_long_status = sm['e2eLongStateSP'].status

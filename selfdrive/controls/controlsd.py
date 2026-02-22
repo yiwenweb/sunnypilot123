@@ -166,6 +166,7 @@ class Controls:
     self.not_running_prev = None
     self.steer_limited = False
     self.desired_curvature = 0.0
+    self.curvature_limited = False
     self.experimental_mode = False
     self.personality = self.read_personality_param()
     self.v_cruise_helper = VCruiseHelper(self.CP)
@@ -660,8 +661,9 @@ class Controls:
         delay = delay + .2
         self.desired_curvature = get_lag_adjusted_curvature(delay, CS.vEgo, lat_plan.psis, lat_plan.curvatures)
       else:
-        self.desired_curvature = clip_curvature(CS.vEgo, self.desired_curvature, model_v2.action.desiredCurvature)
+        self.desired_curvature, self.curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, model_v2.action.desiredCurvature, lp.roll)
       actuators.curvature = self.desired_curvature
+      self.LaC._curvature_limited = self.curvature_limited
       actuators.steer, actuators.steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
                                                                              self.steer_limited, self.desired_curvature,
                                                                              self.sm['liveLocationKalman'],
