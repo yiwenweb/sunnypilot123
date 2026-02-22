@@ -31,123 +31,38 @@ HTML_PAGE = """<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>C3 Live View</title>
+<title>C3 Live</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    background: #000; color: #eee;
-    font-family: -apple-system, sans-serif;
-    display: flex; flex-direction: column; align-items: center;
-    min-height: 100vh; overflow: hidden;
-  }
-  .video-container {
-    width: 100%; height: 100vh; position: relative;
-    background: #000;
-  }
-  .video-container img {
-    width: 100%; height: 100%; display: block;
-    position: absolute; top: 0; left: 0;
-    object-fit: contain;
-  }
-  .video-container .placeholder {
-    position: relative; width: 100%; height: 100vh;
-  }
-  .status {
-    position: absolute; top: 6px; right: 8px; z-index: 10;
-    background: rgba(0,0,0,0.5); padding: 2px 8px;
-    border-radius: 4px; font-size: 11px;
-  }
-  .fps {
-    position: absolute; top: 6px; right: 70px; z-index: 10;
-    background: rgba(0,0,0,0.5); padding: 2px 6px;
-    border-radius: 4px; font-size: 11px; color: #aaa;
-  }
-  /* 摄像头切换按钮 — 右下角小按钮 */
-  .controls {
-    position: absolute; bottom: 6px; right: 6px; z-index: 10;
-    display: flex; gap: 4px;
-  }
-  .cam-btn {
-    padding: 4px 10px; background: rgba(0,0,0,0.5); color: #aaa;
-    border: 1px solid rgba(255,255,255,0.2); border-radius: 12px;
-    font-size: 11px; cursor: pointer;
-  }
-  .cam-btn.active { color: #fff; border-color: rgba(255,255,255,0.5); }
+  body { background: #000; overflow: hidden; }
+  .vc { width: 100vw; height: 100vh; position: relative; }
+  .vc img { width: 100%; height: 100%; display: block; position: absolute; top: 0; left: 0; object-fit: contain; }
 </style>
 </head>
 <body>
-  <div class="video-container" id="container">
-    <div class="placeholder"></div>
-    <div class="status" id="status" style="color:#ff0">CONNECTING</div>
-    <div class="fps" id="fps"></div>
-    <div class="controls">
-      <button class="cam-btn active" onclick="switchCam('road', this)">前方</button>
-      <button class="cam-btn" onclick="switchCam('wideRoad', this)">广角</button>
-      <button class="cam-btn" onclick="switchCam('driver', this)">驾驶员</button>
-    </div>
-  </div>
+  <div class="vc" id="c"><div style="width:100%;height:100vh"></div></div>
   <script>
-    var currentCam = 'road';
-    var statusEl = document.getElementById('status');
-    var fpsEl = document.getElementById('fps');
-    var container = document.getElementById('container');
-    var imgA = new Image();
-    var imgB = new Image();
-    var useA = true;
-    var running = true;
-    var frameCount = 0;
-    var fpsCounter = 0;
-    var lastFpsTime = Date.now();
-
-    imgA.style.cssText = 'width:100%;height:100%;display:block;position:absolute;top:0;left:0;object-fit:contain;';
-    imgB.style.cssText = 'width:100%;height:100%;display:block;position:absolute;top:0;left:0;object-fit:contain;';
-    container.appendChild(imgA);
-    container.appendChild(imgB);
-
-    function loadNext() {
-      if (!running) return;
-      var active = useA ? imgA : imgB;
-      var standby = useA ? imgB : imgA;
-      var url = '/snapshot?cam=' + currentCam + '&t=' + Date.now();
-
-      standby.onload = function() {
-        standby.style.zIndex = 2;
-        active.style.zIndex = 1;
-        useA = !useA;
-        frameCount++;
-        fpsCounter++;
-        statusEl.textContent = 'LIVE';
-        statusEl.style.color = '#0f0';
-        setTimeout(loadNext, 50);
-      };
-      standby.onerror = function() {
-        statusEl.textContent = 'OFFLINE';
-        statusEl.style.color = '#f44';
-        setTimeout(loadNext, 2000);
-      };
-      standby.src = url;
+    var cam = (new URLSearchParams(location.search)).get('cam') || 'road';
+    var c = document.getElementById('c');
+    var a = new Image(), b = new Image(), u = true, fc = 0;
+    a.style.cssText = b.style.cssText = 'width:100%;height:100%;display:block;position:absolute;top:0;left:0;object-fit:contain;';
+    c.appendChild(a); c.appendChild(b);
+    function next() {
+      var s = u ? b : a, o = u ? a : b;
+      s.onload = function() { s.style.zIndex=2; o.style.zIndex=1; u=!u; fc++; setTimeout(next,50); };
+      s.onerror = function() { setTimeout(next,2000); };
+      s.src = '/snapshot?cam=' + cam + '&t=' + Date.now();
     }
-
-    function switchCam(cam, btn) {
-      currentCam = cam;
-      frameCount = 0;
-      document.querySelectorAll('.cam-btn').forEach(function(b) { b.classList.remove('active'); });
-      btn.classList.add('active');
-    }
-
-    // FPS 计算
+    next();
+    // 通过 postMessage 接收摄像头切换指令
+    window.addEventListener('message', function(e) {
+      if (e.data && e.data.cam) { cam = e.data.cam; fc = 0; }
+    });
+    // 暴露 fps 给父页面
     setInterval(function() {
-      var now = Date.now();
-      var elapsed = (now - lastFpsTime) / 1000;
-      if (elapsed > 0) {
-        var fps = Math.round(fpsCounter / elapsed);
-        fpsEl.textContent = fps + 'fps';
-      }
-      fpsCounter = 0;
-      lastFpsTime = now;
-    }, 2000);
-
-    loadNext();
+      try { parent.postMessage({fps: fc}, '*'); } catch(e) {}
+      fc = 0;
+    }, 1000);
   </script>
 </body>
 </html>"""
