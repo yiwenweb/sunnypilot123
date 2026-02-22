@@ -39,8 +39,10 @@ from openpilot.common.swaglog import cloudlog
 
 
 # CP搭子 SDI 类型定义（测速相机类型）
-SDI_CAMERA_TYPES = {0, 1, 2, 3, 4, 7, 8}
-SDI_SECTION_TYPES = {2, 3}  # 区间测速
+# 高德 CAMERA_TYPE: 0=测速, 1=监控, 2=闯红灯, 3=违章拍照, 4=公交车道,
+#                   5=区间测速起点, 6=区间测速终点, 7=应急车道, 8=非机动车道, 12=其他
+SDI_CAMERA_TYPES = {0, 1, 2, 3, 4, 7, 8, 12}  # 普通测速摄像头（需要减速的类型）
+SDI_SECTION_TYPES = {5, 6}  # 区间测速（起点/终点）
 
 # TBT 转弯类型 → 建议速度 (m/s)
 # 高德 ICON 值定义：

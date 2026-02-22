@@ -280,8 +280,11 @@ class LongitudinalPlanner:
 
     # 高德导航弯道减速（来自 navi_bridge 的 turnSpeedLimit）
     # 根据到弯道的距离判断是否需要开始减速，避免突然刹车
+    # 注意：只检查 alive（频率=0 时始终 True），不检查 updated
+    # 因为 navi_bridge 10Hz 而 planner 20Hz，updated 只有一半帧为 True
+    # sm['liveMapDataSP'] 始终保持最后一次收到的数据，所以直接读取即可
     navi_turn_target = 255
-    if sm.alive.get('liveMapDataSP') and sm.updated.get('liveMapDataSP'):
+    if sm.alive.get('liveMapDataSP'):
       map_data = sm['liveMapDataSP']
       if map_data.turnSpeedLimitValid and map_data.turnSpeedLimit > 0:
         turn_v = map_data.turnSpeedLimit          # 弯道建议速度 m/s
