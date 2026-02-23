@@ -100,6 +100,11 @@ class NaviBridge:
     self.traffic_light = 0       # 0=无, 1=红, 2=绿, 3=黄
     self.traffic_light_sec = 0   # 倒计时秒数
 
+    # 限速骤降保护状态
+    self._prev_speed_limit = 0.0  # 上一次发布的限速 (m/s)
+    self._NAVI_MIN_SPEED = 30 * CV.KPH_TO_MS       # 最低限速 30 km/h
+    self._NAVI_MAX_DROP_RATE = 20 * CV.KPH_TO_MS    # 每秒最大降速 20 km/h
+
   def udp_listener_thread(self):
     """后台线程：监听 UDP 7706 端口，接收 CP搭子 JSON"""
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -151,17 +156,33 @@ class NaviBridge:
     return (time.monotonic() - self.last_recv_time) < 5.0 if self.last_recv_time > 0 else False
 
   def get_speed_limit(self):
-    """获取当前道路限速 (m/s)"""
+    """获取当前道路限速 (m/s)，带骤降保护和最低限速"""
     if self.road_limit_speed > 0:
-      return self.road_limit_speed * CV.KPH_TO_MS
+      raw_limit = self.road_limit_speed * CV.KPH_TO_MS
+
+      # 安全防护 1：最低限速 30 km/h，防止高速上误刹停
+      raw_limit = max(raw_limit, self._NAVI_MIN_SPEED)
+
+      # 安全防护 2：限速骤降保护（每秒最多降 20 km/h）
+      # 10Hz 发布，每帧间隔 0.1s
+      if self._prev_speed_limit > 0:
+        max_drop = self._NAVI_MAX_DROP_RATE * 0.1  # 每帧最大降幅
+        if raw_limit < self._prev_speed_limit - max_drop:
+          raw_limit = self._prev_speed_limit - max_drop
+
+      self._prev_speed_limit = raw_limit
+      return raw_limit
+
+    # 无限速时重置
+    self._prev_speed_limit = 0.0
     return 0.0
 
   def get_ahead_speed_limit(self):
     """获取前方测速点/区间测速限速 (speed_ms, distance_m)"""
     if self.sdi_block_type in SDI_SECTION_TYPES and self.sdi_block_speed > 0:
-      return self.sdi_block_speed * CV.KPH_TO_MS, self.sdi_block_dist
+      return max(self.sdi_block_speed * CV.KPH_TO_MS, self._NAVI_MIN_SPEED), self.sdi_block_dist
     if self.sdi_type in SDI_CAMERA_TYPES and self.sdi_speed_limit > 0:
-      return self.sdi_speed_limit * CV.KPH_TO_MS, self.sdi_dist
+      return max(self.sdi_speed_limit * CV.KPH_TO_MS, self._NAVI_MIN_SPEED), self.sdi_dist
     return 0.0, 0.0
 
   def get_turn_speed_limit(self):

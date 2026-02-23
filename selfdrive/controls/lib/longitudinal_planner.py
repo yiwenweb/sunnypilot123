@@ -103,9 +103,7 @@ class LongitudinalPlanner:
     self.dynamic_experimental_controller = DynamicExperimentalController()
     self.accel_controller = AccelController()
 
-    # 导航限速安全防护
-    self._navi_speed_limit_prev = 0.0   # 上一帧的导航限速 (m/s)
-    self._navi_speed_limit_filtered = 0.0  # 平滑后的限速 (m/s)
+
 
   def read_param(self):
     try:
@@ -283,54 +281,16 @@ class LongitudinalPlanner:
     slc_target = self.speed_limit_controller.speed_limit_offseted if self.speed_limit_controller.is_active else 255
     m_tsc_target = self.turn_speed_controller.v_target if self.turn_speed_controller.is_active else 255
 
-    # 高德导航限速 + 弯道减速（来自 navi_bridge 的 liveMapDataSP）
-    # 安全防护：
-    #   1. 最低限速 30 km/h (8.33 m/s)，防止高速上误刹停
-    #   2. 限速骤降保护：每秒最多降 20 km/h (5.56 m/s)，防止突变
-    #   3. 数据超时（GPS 时间戳 > 10s）时放弃限速，回到巡航
-    NAVI_MIN_SPEED = 30 * CV.KPH_TO_MS       # 最低限速 30 km/h
-    NAVI_MAX_DROP_RATE = 20 * CV.KPH_TO_MS    # 每秒最大降速 20 km/h
-    NAVI_DATA_TIMEOUT = 10.0                   # 数据超时 10 秒
+    # 高德导航弯道减速（来自 navi_bridge 的 liveMapDataSP）
+    # 道路限速已交给 SLC 框架处理，这里只保留弯道减速（SLC 不覆盖弯道）
+    NAVI_DATA_TIMEOUT = 10.0  # 数据超时 10 秒
 
     navi_turn_target = 255
-    navi_speed_limit_target = 255
     if sm.alive.get('liveMapDataSP'):
       map_data = sm['liveMapDataSP']
-
-      # 检查数据新鲜度
       gps_age = time.time() - map_data.lastGpsTimestamp * 1e-3
-      data_fresh = gps_age < NAVI_DATA_TIMEOUT
 
-      if data_fresh:
-        # 导航道路限速
-        if map_data.speedLimitValid and map_data.speedLimit > 0:
-          raw_limit = map_data.speedLimit  # m/s
-
-          # 安全防护 1：最低限速
-          raw_limit = max(raw_limit, NAVI_MIN_SPEED)
-
-          # 安全防护 2：限速骤降保护（平滑过渡）
-          if self._navi_speed_limit_prev > 0:
-            max_drop = NAVI_MAX_DROP_RATE * self.dt  # 每帧最大降幅
-            if raw_limit < self._navi_speed_limit_prev - max_drop:
-              raw_limit = self._navi_speed_limit_prev - max_drop
-
-          self._navi_speed_limit_prev = raw_limit
-          navi_speed_limit_target = raw_limit
-        else:
-          # 无限速时逐渐释放（不突然跳到 255）
-          self._navi_speed_limit_prev = 0.0
-
-        # 前方测速摄像头/区间测速提前减速
-        if map_data.speedLimitAheadValid and map_data.speedLimitAhead > 0:
-          ahead_v = max(map_data.speedLimitAhead, NAVI_MIN_SPEED)
-          ahead_dist = map_data.speedLimitAheadDistance
-          if ahead_v < v_ego and ahead_dist > 0:
-            needed_dist = (v_ego ** 2 - ahead_v ** 2) / 2.0
-            needed_dist += v_ego * 3.0
-            if ahead_dist <= needed_dist:
-              navi_speed_limit_target = min(navi_speed_limit_target, ahead_v)
-
+      if gps_age < NAVI_DATA_TIMEOUT:
         # 弯道减速
         if map_data.turnSpeedLimitValid and map_data.turnSpeedLimit > 0:
           turn_v = map_data.turnSpeedLimit
@@ -340,12 +300,9 @@ class LongitudinalPlanner:
             needed_dist += v_ego * 2.0
             if turn_dist <= needed_dist:
               navi_turn_target = turn_v
-      else:
-        # 数据超时，放弃导航限速
-        self._navi_speed_limit_prev = 0.0
 
     # Pick solution with the lowest velocity target.
-    v_solutions = min(v_cruise, v_tsc_target, slc_target, m_tsc_target, navi_turn_target, navi_speed_limit_target)
+    v_solutions = min(v_cruise, v_tsc_target, slc_target, m_tsc_target, navi_turn_target)
 
     return v_solutions
 
